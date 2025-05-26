@@ -1,0 +1,82 @@
+// =============================================
+// Модель системы пожарной сигнализации (DTMC)
+// =============================================
+
+dtmc
+
+// Константы системы
+const int MAX_TIME = 10;         // Макс. время работы системы
+const int MAX_SUPPRESSANT = 100; // Емкость огнетушащего состава
+const int SUPPRESSANT_USAGE = 10;// Расход состава за шаг
+
+// ========================
+// Модуль возникновения пожара
+// ========================
+module Fire
+    fire : [0..1] init 0; // 0 - нет пожара, 1 - пожар
+
+    // Динамика развития пожара
+    [step] fire=0 -> 0.01 : (fire'=1) + 0.99 : (fire'=0); // Вероятность возгорания
+    [step] fire=1 & suppression_active=0 -> 0.05 : (fire'=0) + 0.95 : (fire'=1); // Самоустранение без тушения
+    [step] fire=1 & suppression_active=1 -> 0.3 : (fire'=0) + 0.7 : (fire'=1); // Тушение активно
+endmodule
+
+// ========================
+// Модуль датчика дыма
+// ========================
+module SmokeSensor
+    smoke_detected : [0..1] init 0; // 0 - нет дыма, 1 - обнаружен
+
+    // Вероятности срабатывания датчика
+    [step] fire=1 -> 0.9 : (smoke_detected'=1) + 0.1 : (smoke_detected'=0); // При пожаре
+    [step] fire=0 -> 0.05 : (smoke_detected'=1) + 0.95 : (smoke_detected'=0); // Ложное срабатывание
+endmodule
+
+// ========================
+// Модуль датчика пламени
+// ========================
+module FlameSensor
+    flame_detected : [0..1] init 0; // 0 - нет пламени, 1 - обнаружено
+
+    [step] fire=1 -> 0.85 : (flame_detected'=1) + 0.15 : (flame_detected'=0); // При пожаре
+    [step] fire=0 -> 0.03 : (flame_detected'=1) + 0.97 : (flame_detected'=0); // Ложное срабатывание
+endmodule
+
+// ========================
+// Модуль ручной кнопки
+// ========================
+module ManualButton
+    button_pressed : [0..1] init 0; // 0 - не нажата, 1 - нажата
+
+    [step] fire=1 -> 0.8 : (button_pressed'=1) + 0.2 : (button_pressed'=0); // При пожаре
+    [step] fire=0 -> 0.1 : (button_pressed'=1) + 0.9 : (button_pressed'=0); // Случайное нажатие
+endmodule
+
+// ========================
+// Главный модуль сигнализации
+// ========================
+module Alarm
+    alarm_active : [0..1] init 0;         // Состояние сигнализации
+    suppression_active : [0..1] init 0;   // Система тушения активна
+    time_remaining : [0..MAX_TIME] init 0;// Оставшееся время работы
+    suppressant_level : [0..MAX_SUPPRESSANT] init MAX_SUPPRESSANT; // Уровень состава
+
+    // Активация сигнализации
+    [activate] alarm_active=0 & (smoke_detected=1 | flame_detected=1 | button_pressed=1) ->
+        0.95 : (alarm_active'=1) & (suppression_active'=1) & (time_remaining'=MAX_TIME) & (suppressant_level'=MAX_SUPPRESSANT)
+        + 0.05 : (alarm_active'=1) & (suppression_active'=0); // 5% вероятность отказа тушения
+
+    // Работа системы тушения
+    [suppress_step] suppression_active=1 & time_remaining > 0 & suppressant_level >= SUPPRESSANT_USAGE ->
+        0.7 : (time_remaining' = time_remaining - 1) & (suppressant_level' = suppressant_level - SUPPRESSANT_USAGE) // Нормальная работа
+        + 0.1 : (suppression_active'=0) // Ручное отключение
+        + 0.1 : (time_remaining' = 0) // Аварийный таймаут
+        + 0.1 : (suppressant_level' = 0); // Внезапное опустошение
+
+    // Условия остановки системы
+    [suppress_timeout] suppression_active=1 & time_remaining = 0 -> (suppression_active'=0);
+    [suppress_empty] suppression_active=1 & suppressant_level < SUPPRESSANT_USAGE -> (suppression_active'=0);
+
+    // Деактивация сигнализации
+    [deactivate] suppression_active=0 & alarm_active=1 -> (alarm_active'=0);
+endmodule
