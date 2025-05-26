@@ -97,7 +97,7 @@ ManualOverrideLogic ==
     ELSE 
         /\ alarm_on' = (smoke' \/ flame' \/ panic_button') \* Сигнализация активируется при срабатывании датчиков
         /\ fire_suppression_on' = 
-            IF (smoke' \/ flame' \/ panic_button') /\ mixture_level > 0 
+            IF (smoke' \/ flame' \/ panic_button') /\ (mixture_level > 0) 
             THEN TRUE  \* Пожаротушение активно при наличии триггера и смеси
             ELSE FALSE
         /\ mixture_level' = 
@@ -131,7 +131,7 @@ Next ==
     /\ TimerLogic               \* Обновляем состояние таймера
 
 FAIRNESS ==
-    /\ [] ~manual_override
+    /\ ~manual_override
     /\ smoke
     /\ flame
     /\ panic_button
@@ -164,9 +164,8 @@ Property4 ==
 
 (* 5. Система работает минимум один такт после активации *)
 Property5 == 
-    [] (fire_suppression_on => 
-        (fire_suppression_on \/ 
-            (suppression_timer = 0 \/ mixture_level = 0 \/ manual_override)))
+    <> (fire_suppression_on => 
+        (mixture_level = 0 \/ ~manual_override))
 
 (* 6. Возможность повторной активации после остановки *)
 Property6 == 
